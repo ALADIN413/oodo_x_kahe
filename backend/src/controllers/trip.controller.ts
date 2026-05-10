@@ -5,12 +5,41 @@ import { AuthRequest } from '../middleware/auth.js';
 import { generateQuestions, generateFinalItinerary, regenerateDay } from '../services/gemini.service.js';
 import { logger } from '../lib/logger.js';
 
+export async function generateQuestionsOnly(req: AuthRequest, res: Response) {
+  try {
+    const questions = await generateQuestions();
+    res.json({ questions });
+  } catch (error) {
+    logger.error('Generate questions error:', error);
+    res.status(500).json({ error: 'Failed to generate questions' });
+  }
+}
+
 export async function createTrip(req: AuthRequest, res: Response) {
   try {
-    const { groupId } = req.body;
+    const { groupId, questions } = req.body;
 
     const group = await Group.findById(groupId);
     if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    if (questions && questions.length > 0 && questions[0].answer) {
+      const qa = questions.map((q: any) => ({ question: q.question || '', answer: q.answer || '' }));
+      const aiPlanJson = await generateFinalItinerary(qa);
+
+      const trip = await Trip.create({
+        groupId,
+        destination: 'Trip',
+        startDate: new Date(),
+        endDate: new Date(),
+        budget: 0,
+        interests: [],
+        headcount: 1,
+        questions: qa,
+        aiPlanJson,
+      });
+
+      return res.status(201).json({ trip });
+    }
 
     const trip = await Trip.create({
       groupId,
@@ -22,8 +51,8 @@ export async function createTrip(req: AuthRequest, res: Response) {
       headcount: 1,
     });
 
-    const questions = await generateQuestions();
-    trip.set('questions', questions.map((q: any) => ({ question: q.question, answer: '' })));
+    const genQuestions = await generateQuestions();
+    trip.set('questions', genQuestions.map((q: any) => ({ question: q.question, answer: '' })));
     await trip.save();
 
     res.status(201).json({ trip });

@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../../src/context/AuthContext';
 import { useAppData } from '../../../src/store/useStore';
 import { useColors } from '../../../src/hooks/useColors';
+import LoadingBar from '../../../src/components/LoadingBar';
 
 interface ChatMessage {
   type: 'ai' | 'user';
@@ -14,7 +15,7 @@ interface ChatMessage {
 export default function TripSetupScreen() {
   const { id } = useLocalSearchParams();
   const { token } = useAuth();
-  const { createTrip, submitAnswers } = useAppData();
+  const { generateQuestions, createTrip } = useAppData();
   const colors = useColors();
   const scrollRef = useRef<ScrollView>(null);
 
@@ -24,28 +25,26 @@ export default function TripSetupScreen() {
   const [questions, setQuestions] = useState<Array<{ question: string; answer: string }>>([]);
   const [currentQ, setCurrentQ] = useState(0);
   const [answer, setAnswer] = useState('');
-  const [tripId, setTripId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [clarifying, setClarifying] = useState(false);
 
   useEffect(() => {
-    initTrip();
+    loadQuestions();
   }, []);
 
-  async function initTrip() {
+  async function loadQuestions() {
     try {
-      const trip = await createTrip({ groupId: id });
-      setTripId(trip._id);
-      setQuestions(trip.questions || []);
-      if (trip.questions?.length > 0) {
+      const data = await generateQuestions();
+      const qs = data.questions || [];
+      setQuestions(qs.map((q: any) => ({ question: q.question, answer: '' })));
+      if (qs.length > 0) {
         setMessages((prev) => [
           ...prev,
-          { type: 'ai', text: trip.questions[0].question },
+          { type: 'ai', text: qs[0].question },
         ]);
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to start');
+      Alert.alert('Error', e.message || 'Failed to load questions');
     } finally {
       setLoading(false);
     }
@@ -77,20 +76,6 @@ export default function TripSetupScreen() {
     scrollToBottom();
   }
 
-  async function handleClarify() {
-    setClarifying(true);
-    try {
-      const allAnswered = questions.map((q) => q.answer || 'No answer').join(' | ');
-      const clarifyMsg = `Based on your answers so far: ${allAnswered}\n\nCould you clarify or add anything? Type your response below.`;
-      setMessages((prev) => [...prev, { type: 'ai', text: clarifyMsg }]);
-      setQuestions((prev) => [...prev, { question: clarifyMsg, answer: '' }]);
-      setCurrentQ(questions.length);
-      scrollToBottom();
-    } finally {
-      setClarifying(false);
-    }
-  }
-
   async function handleGenerateReport() {
     const unanswered = questions.filter((q) => !q.answer.trim());
     if (unanswered.length > 0 && questions.length > 0) {
@@ -99,9 +84,8 @@ export default function TripSetupScreen() {
     }
     setGenerating(true);
     try {
-      const answers = questions.map((q) => q.answer || '');
-      const updatedTrip = await submitAnswers(tripId!, answers);
-      router.replace(`/group/${id}/trip/${updatedTrip._id}`);
+      const trip = await createTrip({ groupId: id, questions });
+      router.replace(`/group/${id}/trip/${trip._id}`);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to generate report');
     } finally {
@@ -112,8 +96,10 @@ export default function TripSetupScreen() {
   if (loading) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Preparing your questions...</Text>
+        <LoadingBar color={colors.primary} height={6} />
+        <View style={{ paddingHorizontal: 32, marginTop: 16 }}>
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Preparing your questions...</Text>
+        </View>
       </View>
     );
   }
@@ -124,9 +110,11 @@ export default function TripSetupScreen() {
     <KeyboardAvoidingView style={[styles.container, { backgroundColor: colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.headerBar}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>AI Trip Planner</Text>
-        <Text style={[styles.headerSub, { color: colors.textSecondary }]}>
-          Question {Math.min(currentQ + 1, questions.length)} of {questions.length}
-        </Text>
+        {questions.length > 0 && (
+          <Text style={[styles.headerSub, { color: colors.textSecondary }]}>
+            Question {Math.min(currentQ + 1, questions.length)} of {questions.length}
+          </Text>
+        )}
       </View>
 
       <ScrollView ref={scrollRef} style={styles.chatArea} contentContainerStyle={styles.chatContent}>
@@ -152,21 +140,12 @@ export default function TripSetupScreen() {
         {allDone ? (
           <View style={styles.doneRow}>
             <TouchableOpacity
-              style={[styles.clarifyBtn, { borderColor: colors.border }]}
-              onPress={handleClarify}
-              disabled={clarifying}
-            >
-              <Text style={[styles.clarifyBtnText, { color: colors.textSecondary }]}>
-                {clarifying ? '...' : '🤔 Clarify'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
               style={[styles.generateBtn, { backgroundColor: colors.primary, opacity: generating ? 0.6 : 1 }]}
               onPress={handleGenerateReport}
               disabled={generating}
             >
               {generating ? (
-                <ActivityIndicator size="small" color="#FFF" />
+                <LoadingBar color="#FFF" trackColor="rgba(255,255,255,0.3)" height={4} />
               ) : (
                 <Text style={styles.generateBtnText}>✨ Generate Report</Text>
               )}
@@ -217,8 +196,6 @@ const styles = StyleSheet.create({
   sendBtn: { width: 46, height: 46, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
   sendBtnText: { color: '#FFF', fontSize: 20, fontWeight: '700' },
   doneRow: { flexDirection: 'row', gap: 10 },
-  clarifyBtn: { flex: 1, height: 48, borderRadius: 14, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  clarifyBtnText: { fontSize: 14, fontWeight: '600' },
-  generateBtn: { flex: 2, height: 48, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  generateBtn: { flex: 1, height: 48, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
   generateBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
 });

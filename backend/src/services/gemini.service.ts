@@ -13,29 +13,45 @@ async function callModel(model: string, systemPrompt: string, userPrompt: string
 
   const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.openrouterApiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.7,
-      max_tokens: 4096,
-    }),
-  });
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.openrouterApiKey}`,
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 2048,
+      }),
+    });
 
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    throw new AiError(`Model ${model} failed: ${response.status} ${body}`);
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new AiError(`Model ${model} failed: ${response.status} ${body}`);
+    }
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content || '';
+    return text.trim();
+}
+
+function safeParseJson(raw: string): any {
+  const cleaned = raw.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const jsonMatch = cleaned.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[0]);
+      } catch {}
+    }
+    logger.error('Failed to parse AI response as JSON', { raw: raw.slice(0, 500) });
+    throw new AiError('AI response was not valid JSON');
   }
-
-  const data = await response.json();
-  const text = data.choices?.[0]?.message?.content || '';
-  return text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
 }
 
 async function tryModels(systemPrompt: string, userPrompt: string): Promise<string> {
@@ -43,47 +59,44 @@ async function tryModels(systemPrompt: string, userPrompt: string): Promise<stri
 
   for (const model of config.models) {
     try {
+      logger.info('Calling AI model', { model });
       const result = await callModel(model, systemPrompt, userPrompt);
-      if (result) return result;
+      if (result) {
+        logger.info('AI model succeeded', { model });
+        return result;
+      }
       errors.push(`${model}: empty response`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(`${model}: ${msg}`);
-      logger.warn(`Model failed, trying next`, { model, error: msg });
+      logger.warn(`Model failed`, { model, error: msg });
     }
   }
 
   throw new AiError(`All AI models failed:\n${errors.join('\n')}`);
 }
 
-const QUESTIONS_SYSTEM_PROMPT = `You are a smart travel planning assistant. Your job is to ask ALL necessary questions to plan a complete group trip from scratch. Respond with ONLY a valid JSON array of 10-15 questions. No other text. No markdown.`;
+const QUESTIONS_SYSTEM_PROMPT = `You are a smart travel planning assistant. Generate 8-10 questions to plan a group trip. Respond with ONLY a valid JSON array of strings. No other text. No markdown.`;
 
-const QUESTIONS_USER_PROMPT = `Generate 10-15 comprehensive questions to plan a group trip from scratch. Cover ALL these topics:
-1. Destination & travel dates
-2. Total budget and currency
-3. Number of travelers and their ages
-4. Trip purpose (adventure, relaxation, cultural, family, romantic, business)
-5. Interests and activities preferred
-6. Dietary restrictions (vegetarian, allergies, etc.)
-7. Accommodation preferences (hotel, hostel, resort, Airbnb, luxury level)
-8. Transportation preferences (flights, train, car rental, public transport)
-9. Restaurant and dining preferences (budget, cuisine types)
-10. Need travel agency assistance?
-11. Need hotel booking assistance?
-12. Need restaurant booking assistance?
-13. Any specific must-visit attractions or places
-14. Pace preference (sightseeing-heavy vs relaxed)
-15. Nightlife and evening activity preferences
-
-Each question should be conversational, specific, and helpful.
+const QUESTIONS_USER_PROMPT = `Generate 8-10 questions to plan a group trip. Cover these topics:
+1. Departure city
+2. Destination & travel dates
+3. Budget & number of travelers
+4. Trip purpose & interests
+5. Dietary restrictions
+6. Accommodation preference
+7. Transportation preference
+8. Must-visit attractions
+9. Pace preference (packed vs relaxed)
+10. Any other preferences
 
 Respond with ONLY valid JSON:
-["Question 1?", "Question 2?", ..., "Question 15?"]`;
+["Question 1?", "Question 2?", ..., "Question 10?"]`;
 
 export async function generateQuestions(): Promise<Array<{ question: string }>> {
   const text = await tryModels(QUESTIONS_SYSTEM_PROMPT, QUESTIONS_USER_PROMPT);
   if (!text) throw new AiError('Empty response from all models for questions');
-  const parsed = JSON.parse(text);
+  const parsed = safeParseJson(text);
   return (parsed || []).map((q: string) => ({ question: q }));
 }
 
@@ -92,55 +105,42 @@ export async function generateFinalItinerary(answers: Array<{ question: string; 
     .map((q) => `Q: ${q.question}\nA: ${q.answer}`)
     .join('\n\n');
 
-  const systemPrompt = `You are a world-class travel itinerary planner. Generate detailed, practical itineraries in JSON format only.`;
+  const systemPrompt = `You are a travel itinerary planner. Generate a detailed itinerary in JSON format only.`;
 
-  const userPrompt = `Create a complete group trip itinerary based on the following traveler preferences:
+  const userPrompt = `Create a group trip itinerary based on these preferences:
 
 ${qaContext || 'No specific preferences provided.'}
 
-Respond with valid JSON following this EXACT structure (no markdown, no code fences):
+Day 1 must start with "Departure" (travel from origin). The last day must end with "Return Travel" (travel back).
+
+Respond with valid JSON (no markdown):
 {
   "days": [
     {
       "day": 1,
       "city": "city name",
       "activities": [
-        {
-          "time": "HH:MM",
-          "activity": "short name",
-          "description": "brief description",
-          "cost": <number>,
-          "category": "food|transport|attraction|shopping|other"
-        }
+        { "time": "HH:MM", "activity": "Departure", "description": "Travel from origin", "cost": 0, "category": "transport" },
+        { "time": "HH:MM", "activity": "name", "description": "desc", "cost": 0, "category": "food|transport|attraction|shopping|other" }
       ]
     }
   ],
-  "totalCost": <number>,
+  "totalCost": 0,
   "currency": "USD",
-  "budgetBreakdown": {
-    "accommodation": <number>,
-    "food": <number>,
-    "transport": <number>,
-    "activities": <number>,
-    "other": <number>
-  },
-  "recommendations": {
-    "hotel": "recommended hotel name and reason",
-    "restaurants": ["restaurant 1", "restaurant 2"],
-    "transportTips": "transport tip"
-  },
-  "notes": "helpful note"
+  "budgetBreakdown": { "accommodation": 0, "food": 0, "transport": 0, "activities": 0, "other": 0 },
+  "recommendations": { "hotel": "name", "restaurants": ["r1","r2"], "transportTips": "tip" },
+  "notes": "note"
 }`;
 
   const text = await tryModels(systemPrompt, userPrompt);
   if (!text) throw new AiError('Empty response from all models for itinerary');
-  return JSON.parse(text);
+  return safeParseJson(text);
 }
 
 export async function regenerateDay(currentDays: any[], dayNumber: number, instruction: string): Promise<any> {
-  const systemPrompt = `You are a travel planner. Regenerate a single day of an itinerary. Respond with JSON only.`;
+  const systemPrompt = `You are a travel planner. Regenerate a single day of an itinerary. Return JSON only.`;
 
-  const userPrompt = `Current full itinerary days:\n${JSON.stringify(currentDays)}\n\nRegenerate Day ${dayNumber} with this change: "${instruction}"\n\nReturn ONLY the updated day object matching this structure:
+  const userPrompt = `Current itinerary:\n${JSON.stringify(currentDays)}\n\nRegenerate Day ${dayNumber}: "${instruction}"\n\nReturn:
 {
   "day": ${dayNumber},
   "city": "city",
@@ -151,5 +151,5 @@ export async function regenerateDay(currentDays: any[], dayNumber: number, instr
 
   const text = await tryModels(systemPrompt, userPrompt);
   if (!text) return null;
-  return JSON.parse(text);
+  return safeParseJson(text);
 }

@@ -43,6 +43,9 @@ export const api = {
 
   getMyGroups: (token: string) => authRequest('/groups/my', token),
 
+  generateQuestions: (token: string) =>
+    authRequest('/trips/questions/generate', token, { method: 'POST' }),
+
   createTrip: (token: string, data: any) =>
     authRequest('/trips/create', token, { method: 'POST', body: JSON.stringify(data) }),
 

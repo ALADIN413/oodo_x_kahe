@@ -1,0 +1,131 @@
+{
+  "tested_at": "2026-05-10T14:50:15.724312",
+  "working": [
+    {
+      "provider": "openrouter",
+      "model": "meta-llama/llama-3.3-70b-instruct",
+      "elapsed": 9.29,
+      "output_chars": 3573
+    },
+    {
+      "provider": "openrouter",
+      "model": "google/gemini-2.0-flash-001",
+      "elapsed": 10.21,
+      "output_chars": 3301
+    },
+    {
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "elapsed": 10.21,
+      "output_chars": 3609
+    },
+    {
+      "provider": "openrouter",
+      "model": "anthropic/claude-3-haiku",
+      "elapsed": 12.56,
+      "output_chars": 3190
+    }
+  ],
+  "failed": [
+    {
+      "provider": "gemini",
+      "model": "gemini-2.0-flash",
+      "reason": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to"
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-2.0-flash-lite",
+      "reason": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to"
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-1.5-flash",
+      "reason": "models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to"
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-1.5-flash-8b",
+      "reason": "models/gemini-1.5-flash-8b is not found for API version v1beta, or is not supported for generateContent. Call ListModels"
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-1.5-pro",
+      "reason": "models/gemini-1.5-pro is not found for API version v1beta, or is not supported for generateContent. Call ListModels to s"
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-2.5-flash-preview-05-20",
+      "reason": "models/gemini-2.5-flash-preview-05-20 is not found for API version v1beta, or is not supported for generateContent. Call"
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-2.5-pro-preview-05-06",
+      "reason": "models/gemini-2.5-pro-preview-05-06 is not found for API version v1beta, or is not supported for generateContent. Call L"
+    },
+    {
+      "provider": "openrouter",
+      "model": "google/gemini-flash-1.5",
+      "reason": "No endpoints found for google/gemini-flash-1.5."
+    },
+    {
+      "provider": "openrouter",
+      "model": "google/gemini-pro-1.5",
+      "reason": "No endpoints found for google/gemini-pro-1.5."
+    },
+    {
+      "provider": "openrouter",
+      "model": "meta-llama/llama-3.1-8b-instruct:free",
+      "reason": "No endpoints found for meta-llama/llama-3.1-8b-instruct:free."
+    },
+    {
+      "provider": "openrouter",
+      "model": "mistralai/mistral-7b-instruct:free",
+      "reason": "No endpoints found for mistralai/mistral-7b-instruct:free."
+    },
+    {
+      "provider": "openrouter",
+      "model": "mistralai/mistral-small-3.1-24b-instruct:free",
+      "reason": "No endpoints found for mistralai/mistral-small-3.1-24b-instruct:free."
+    },
+    {
+      "provider": "openrouter",
+      "model": "deepseek/deepseek-chat-v3-0324:free",
+      "reason": "No endpoints found for deepseek/deepseek-chat-v3-0324:free."
+    },
+    {
+      "provider": "openrouter",
+      "model": "deepseek/deepseek-r1:free",
+      "reason": "No endpoints found for deepseek/deepseek-r1:free."
+    },
+    {
+      "provider": "openrouter",
+      "model": "qwen/qwen3-8b:free",
+      "reason": "No endpoints found for qwen/qwen3-8b:free."
+    },
+    {
+      "provider": "openrouter",
+      "model": "qwen/qwen3-14b:free",
+      "reason": "No endpoints found for qwen/qwen3-14b:free."
+    },
+    {
+      "provider": "openrouter",
+      "model": "qwen/qwen3-32b:free",
+      "reason": "No endpoints found for qwen/qwen3-32b:free."
+    },
+    {
+      "provider": "openrouter",
+      "model": "microsoft/phi-4-reasoning:free",
+      "reason": "No endpoints found for microsoft/phi-4-reasoning:free."
+    },
+    {
+      "provider": "openrouter",
+      "model": "nousresearch/hermes-3-llama-3.1-70b:free",
+      "reason": "No endpoints found for nousresearch/hermes-3-llama-3.1-70b:free."
+    },
+    {
+      "provider": "openrouter",
+      "model": "thudm/glm-4-32b:free",
+      "reason": "No endpoints found for thudm/glm-4-32b:free."
+    }
+  ]
+}

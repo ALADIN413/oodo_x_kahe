@@ -1,26 +1,45 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
 import { useAppData } from '../../src/store/useStore';
 import { useColors } from '../../src/hooks/useColors';
 import { api } from '../../src/services/api';
+import LoadingBar from '../../src/components/LoadingBar';
+
+const DEMO_QUESTIONS = [
+  { question: 'Where are you from?', answer: 'New York, USA' },
+  { question: 'Where would you like to go?', answer: 'Paris, France' },
+  { question: 'What dates are you planning to travel?', answer: 'June 1 to June 7, 2026' },
+  { question: 'What is your total budget in USD?', answer: '3000' },
+  { question: 'How many people are traveling?', answer: '2 adults' },
+  { question: 'What type of trip do you want?', answer: 'Cultural and romantic' },
+  { question: 'What are your main interests?', answer: 'Food, history, museums, photography' },
+  { question: 'Any dietary restrictions?', answer: 'None' },
+  { question: 'What accommodation do you prefer?', answer: 'Boutique hotel in central Paris' },
+  { question: 'How will you get around?', answer: 'Public transport and walking' },
+  { question: 'Any must-visit attractions?', answer: 'Eiffel Tower, Louvre, Versailles' },
+  { question: 'Do you prefer a packed or relaxed pace?', answer: 'Relaxed with free time' },
+  { question: 'Evening activities?', answer: 'River cruise, dinner at bistros' },
+  { question: 'Any special occasions?', answer: 'Anniversary trip' },
+];
 
 export default function GroupDetailScreen() {
   const { id } = useLocalSearchParams();
   const { token } = useAuth();
-  const { fetchGroups } = useAppData();
+  const { fetchGroups, createTrip } = useAppData();
   const colors = useColors();
   const [group, setGroup] = useState<any>(null);
   const [trips, setTrips] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [demoLoading, setDemoLoading] = useState(false);
 
   async function loadGroup() {
     try {
       const data = await api.getGroup(token!, id as string);
       setGroup(data.group);
       const tripData = await api.getTrips(token!, id as string);
-      setTrips(tripData.trips);
+      setTrips((tripData.trips || []).filter((t: any) => t.aiPlanJson));
     } catch { } finally {
       setLoading(false);
     }
@@ -36,10 +55,23 @@ export default function GroupDetailScreen() {
     }
   }
 
+  async function handleDemoTrip() {
+    setDemoLoading(true);
+    try {
+      const trip = await createTrip({ groupId: id, questions: DEMO_QUESTIONS });
+      await loadGroup();
+      router.push(`/group/${id}/trip/${trip._id}`);
+    } catch (e: any) {
+      Alert.alert('Demo Error', e.message || 'Failed to generate demo trip');
+    } finally {
+      setDemoLoading(false);
+    }
+  }
+
   if (loading) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <LoadingBar color={colors.primary} height={6} />
       </View>
     );
   }
@@ -64,6 +96,16 @@ export default function GroupDetailScreen() {
           <Text style={[styles.inviteLabel, { color: colors.textSecondary }]}>Invite Code</Text>
           <Text style={[styles.inviteCode, { color: colors.primary }]}>{group.inviteCode}</Text>
           <Text style={[styles.tapHint, { color: colors.textSecondary }]}>Tap to share</Text>
+        </TouchableOpacity>
+
+        {demoLoading && <LoadingBar color={colors.primary} height={4} />}
+
+        <TouchableOpacity
+          style={[styles.demoBtn, { backgroundColor: colors.surface, borderColor: colors.primary }]}
+          onPress={handleDemoTrip}
+          disabled={demoLoading}
+        >
+          <Text style={[styles.demoBtnText, { color: colors.primary }]}>🚀 Demo Trip — Paris</Text>
         </TouchableOpacity>
 
         <View style={styles.actions}>
@@ -126,6 +168,8 @@ const styles = StyleSheet.create({
   inviteLabel: { fontSize: 12, fontWeight: '600', letterSpacing: 1 },
   inviteCode: { fontSize: 28, fontWeight: '800', letterSpacing: 3, marginTop: 8 },
   tapHint: { fontSize: 12, marginTop: 6 },
+  demoBtn: { height: 48, borderRadius: 14, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  demoBtnText: { fontSize: 15, fontWeight: '700' },
   actions: { flexDirection: 'row', gap: 12, marginBottom: 24 },
   actionBtn: { flex: 1, height: 46, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
   actionBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },

@@ -26,6 +26,7 @@ interface AppDataContextType {
   fetchGroups: () => Promise<void>;
   createGroup: (name: string) => Promise<Group>;
   joinGroup: (inviteCode: string) => Promise<Group>;
+  generateQuestions: () => Promise<{ questions: Array<{ question: string }> }>;
   createTrip: (data: any) => Promise<Trip>;
   submitAnswers: (tripId: string, answers: string[]) => Promise<Trip>;
   regenerateDay: (tripId: string, dayNumber: number, instruction: string) => Promise<Trip>;
@@ -62,6 +63,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     return data.group;
   }, [token]);
 
+  const generateQuestions = useCallback(async () => {
+    return api.generateQuestions(token!);
+  }, [token]);
+
   const createTrip = useCallback(async (tripData: any) => {
     const data = await api.createTrip(token!, tripData);
     return data.trip;
@@ -84,7 +89,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AppDataContext.Provider value={{
-      groups, loading, fetchGroups, createGroup, joinGroup, createTrip,
+      groups, loading, fetchGroups, createGroup, joinGroup, generateQuestions, createTrip,
       submitAnswers, regenerateDay, getTrips,
     }}>
       {children}

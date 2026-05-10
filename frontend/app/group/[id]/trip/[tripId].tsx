@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, TextInput, Modal, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, TextInput, Modal, Alert, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -10,6 +10,7 @@ import { useColors } from '../../../../src/hooks/useColors';
 import { api } from '../../../../src/services/api';
 import ItineraryCard from '../../../../src/components/ItineraryCard';
 import BudgetSummary from '../../../../src/components/BudgetSummary';
+import LoadingBar from '../../../../src/components/LoadingBar';
 
 export default function TripDetailScreen() {
   const { id, tripId } = useLocalSearchParams();
@@ -46,8 +47,8 @@ export default function TripDetailScreen() {
     setRegenerating(regenDay);
     setShowRegenModal(false);
     try {
-      const updated = await regenerateDay(tripId as string, regenDay, regenInstruction);
-      setTrip(updated);
+      await regenerateDay(tripId as string, regenDay, regenInstruction);
+      await loadTrip();
       Alert.alert('Done!', `Day ${regenDay} has been updated.`);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to regenerate day');
@@ -133,7 +134,7 @@ export default function TripDetailScreen() {
   if (loading) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <LoadingBar color={colors.primary} height={6} />
       </View>
     );
   }
@@ -257,7 +258,7 @@ export default function TripDetailScreen() {
                   disabled={regenerating === day.day}
                 >
                   {regenerating === day.day ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
+                    <LoadingBar color={colors.primary} height={4} />
                   ) : (
                     <>
                       <Text style={[styles.regenIcon]}>🔄</Text>
