@@ -1,188 +1,224 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Platform } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useAuth } from '../../../src/context/AuthContext';
 import { useAppData } from '../../../src/store/useStore';
 import { useColors } from '../../../src/hooks/useColors';
 
-const INTEREST_OPTIONS = ['Adventure', 'Culture', 'Food', 'Shopping', 'Nature', 'Nightlife', 'Relaxation', 'History'];
+interface ChatMessage {
+  type: 'ai' | 'user';
+  text: string;
+  index?: number;
+}
 
 export default function TripSetupScreen() {
   const { id } = useLocalSearchParams();
-  const { createTrip } = useAppData();
+  const { token } = useAuth();
+  const { createTrip, submitAnswers } = useAppData();
   const colors = useColors();
+  const scrollRef = useRef<ScrollView>(null);
 
-  const [destination, setDestination] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [budget, setBudget] = useState('');
-  const [headcount, setHeadcount] = useState('');
-  const [interests, setInterests] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { type: 'ai', text: "Hi! I'm your AI travel assistant. Let me ask you a few questions to plan the perfect trip! ✈️" },
+  ]);
+  const [questions, setQuestions] = useState<Array<{ question: string; answer: string }>>([]);
+  const [currentQ, setCurrentQ] = useState(0);
+  const [answer, setAnswer] = useState('');
+  const [tripId, setTripId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [clarifying, setClarifying] = useState(false);
 
-  function toggleInterest(interest: string) {
-    setInterests((prev) =>
-      prev.includes(interest) ? prev.filter((i) => i !== interest) : [...prev, interest]
-    );
-  }
+  useEffect(() => {
+    initTrip();
+  }, []);
 
-  async function handleCreateTrip() {
-    if (!destination || !startDate || !endDate || !budget || !headcount) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
-
-    const budgetNum = parseFloat(budget);
-    const headcountNum = parseInt(headcount, 10);
-    if (isNaN(budgetNum) || budgetNum <= 0) {
-      Alert.alert('Error', 'Please enter a valid budget');
-      return;
-    }
-    if (isNaN(headcountNum) || headcountNum <= 0) {
-      Alert.alert('Error', 'Please enter a valid headcount');
-      return;
-    }
-
-    setLoading(true);
+  async function initTrip() {
     try {
-      const trip = await createTrip({
-        groupId: id,
-        destination: destination.trim(),
-        startDate,
-        endDate,
-        budget: budgetNum,
-        interests,
-        headcount: headcountNum,
-      });
-      router.replace(`/group/${id}/trip/${trip._id}`);
+      const trip = await createTrip({ groupId: id });
+      setTripId(trip._id);
+      setQuestions(trip.questions || []);
+      if (trip.questions?.length > 0) {
+        setMessages((prev) => [
+          ...prev,
+          { type: 'ai', text: trip.questions[0].question },
+        ]);
+      }
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to create trip');
+      Alert.alert('Error', e.message || 'Failed to start');
     } finally {
       setLoading(false);
     }
   }
 
-  return (
-    <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.content}>
-        <Text style={[styles.title, { color: colors.text }]}>Plan Your Trip</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          Fill in the details and let AI create the perfect itinerary
-        </Text>
+  function scrollToBottom() {
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+  }
 
-        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Destination</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.surfaceAlt, color: colors.text, borderColor: colors.border }]}
-            value={destination}
-            onChangeText={setDestination}
-            placeholder="e.g. Bali, Indonesia"
-            placeholderTextColor={colors.textSecondary}
-          />
+  function handleSend() {
+    if (!answer.trim()) return;
 
-          <View style={styles.dateRow}>
-            <View style={styles.dateField}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Start Date</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: colors.surfaceAlt, color: colors.text, borderColor: colors.border }]}
-                value={startDate}
-                onChangeText={setStartDate}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textSecondary}
-              />
-            </View>
-            <View style={styles.dateField}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>End Date</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: colors.surfaceAlt, color: colors.text, borderColor: colors.border }]}
-                value={endDate}
-                onChangeText={setEndDate}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textSecondary}
-              />
-            </View>
-          </View>
+    const qIdx = currentQ;
+    const newMessages: ChatMessage[] = [
+      ...messages,
+      { type: 'user', text: answer.trim(), index: qIdx },
+    ];
 
-          <View style={styles.numberRow}>
-            <View style={styles.numberField}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Budget ($)</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: colors.surfaceAlt, color: colors.text, borderColor: colors.border }]}
-                value={budget}
-                onChangeText={setBudget}
-                placeholder="e.g. 3000"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="numeric"
-              />
-            </View>
-            <View style={styles.numberField}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Travelers</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: colors.surfaceAlt, color: colors.text, borderColor: colors.border }]}
-                value={headcount}
-                onChangeText={setHeadcount}
-                placeholder="e.g. 4"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="numeric"
-              />
-            </View>
-          </View>
+    if (qIdx + 1 < questions.length) {
+      newMessages.push({ type: 'ai', text: questions[qIdx + 1].question });
+    }
 
-          <Text style={[styles.label, { color: colors.textSecondary, marginTop: 8 }]}>Interests</Text>
-          <View style={styles.chips}>
-            {INTEREST_OPTIONS.map((interest) => (
-              <TouchableOpacity
-                key={interest}
-                style={[
-                  styles.chip,
-                  {
-                    backgroundColor: interests.includes(interest) ? colors.primary : colors.surfaceAlt,
-                    borderColor: interests.includes(interest) ? colors.primary : colors.border,
-                  },
-                ]}
-                onPress={() => toggleInterest(interest)}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    { color: interests.includes(interest) ? '#FFFFFF' : colors.textSecondary },
-                  ]}
-                >
-                  {interest}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+    setMessages(newMessages);
+    setQuestions((prev) => prev.map((q, i) =>
+      i === qIdx ? { ...q, answer: answer.trim() } : q
+    ));
+    setAnswer('');
+    setCurrentQ(qIdx + 1);
+    scrollToBottom();
+  }
 
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: colors.primary, opacity: loading ? 0.6 : 1 }]}
-            onPress={handleCreateTrip}
-            disabled={loading}
-          >
-            <Text style={styles.buttonText}>
-              {loading ? 'Creating...' : 'Generate AI Itinerary'}
-            </Text>
-          </TouchableOpacity>
-        </View>
+  async function handleClarify() {
+    setClarifying(true);
+    try {
+      const allAnswered = questions.map((q) => q.answer || 'No answer').join(' | ');
+      const clarifyMsg = `Based on your answers so far: ${allAnswered}\n\nCould you clarify or add anything? Type your response below.`;
+      setMessages((prev) => [...prev, { type: 'ai', text: clarifyMsg }]);
+      setQuestions((prev) => [...prev, { question: clarifyMsg, answer: '' }]);
+      setCurrentQ(questions.length);
+      scrollToBottom();
+    } finally {
+      setClarifying(false);
+    }
+  }
+
+  async function handleGenerateReport() {
+    const unanswered = questions.filter((q) => !q.answer.trim());
+    if (unanswered.length > 0 && questions.length > 0) {
+      Alert.alert('Hold on!', `Please answer all questions first. (${unanswered.length} remaining)`);
+      return;
+    }
+    setGenerating(true);
+    try {
+      const answers = questions.map((q) => q.answer || '');
+      const updatedTrip = await submitAnswers(tripId!, answers);
+      router.replace(`/group/${id}/trip/${updatedTrip._id}`);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to generate report');
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <View style={[styles.center, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Preparing your questions...</Text>
       </View>
-    </ScrollView>
+    );
+  }
+
+  const allDone = currentQ >= questions.length && questions.length > 0;
+
+  return (
+    <KeyboardAvoidingView style={[styles.container, { backgroundColor: colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.headerBar}>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>AI Trip Planner</Text>
+        <Text style={[styles.headerSub, { color: colors.textSecondary }]}>
+          Question {Math.min(currentQ + 1, questions.length)} of {questions.length}
+        </Text>
+      </View>
+
+      <ScrollView ref={scrollRef} style={styles.chatArea} contentContainerStyle={styles.chatContent}>
+        {messages.map((msg, i) => (
+          <View key={i} style={[styles.bubbleRow, msg.type === 'user' ? styles.userRow : styles.aiRow]}>
+            {msg.type === 'ai' && <View style={[styles.avatar, { backgroundColor: colors.primary }]}><Text style={styles.avatarText}>🤖</Text></View>}
+            <View style={[
+              styles.bubble,
+              msg.type === 'user'
+                ? [styles.userBubble, { backgroundColor: colors.primary }]
+                : [styles.aiBubble, { backgroundColor: colors.surface, borderColor: colors.border }],
+            ]}>
+              <Text style={[styles.bubbleText, { color: msg.type === 'user' ? '#FFF' : colors.text }]}>
+                {msg.text}
+              </Text>
+            </View>
+            {msg.type === 'user' && <View style={[styles.avatar, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, borderWidth: 1 }]}><Text style={styles.avatarText}>👤</Text></View>}
+          </View>
+        ))}
+      </ScrollView>
+
+      <View style={[styles.inputBar, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
+        {allDone ? (
+          <View style={styles.doneRow}>
+            <TouchableOpacity
+              style={[styles.clarifyBtn, { borderColor: colors.border }]}
+              onPress={handleClarify}
+              disabled={clarifying}
+            >
+              <Text style={[styles.clarifyBtnText, { color: colors.textSecondary }]}>
+                {clarifying ? '...' : '🤔 Clarify'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.generateBtn, { backgroundColor: colors.primary, opacity: generating ? 0.6 : 1 }]}
+              onPress={handleGenerateReport}
+              disabled={generating}
+            >
+              {generating ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <Text style={styles.generateBtnText}>✨ Generate Report</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.inputRow}>
+            <TextInput
+              style={[styles.textInput, { backgroundColor: colors.surfaceAlt, color: colors.text, borderColor: colors.border }]}
+              value={answer}
+              onChangeText={setAnswer}
+              placeholder="Type your answer..."
+              placeholderTextColor={colors.textSecondary}
+              onSubmitEditing={handleSend}
+              returnKeyType="send"
+            />
+            <TouchableOpacity style={[styles.sendBtn, { backgroundColor: colors.primary }]} onPress={handleSend}>
+              <Text style={styles.sendBtnText}>→</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: 16 },
-  title: { fontSize: 26, fontWeight: '800', marginBottom: 6, marginTop: 8 },
-  subtitle: { fontSize: 14, marginBottom: 24, lineHeight: 20 },
-  card: { borderRadius: 20, borderWidth: 1, padding: 20 },
-  label: { fontSize: 13, fontWeight: '600', marginBottom: 6, marginTop: 12 },
-  input: { height: 48, borderRadius: 12, borderWidth: 1, paddingHorizontal: 16, fontSize: 16 },
-  dateRow: { flexDirection: 'row', gap: 12 },
-  dateField: { flex: 1 },
-  numberRow: { flexDirection: 'row', gap: 12 },
-  numberField: { flex: 1 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
-  chipText: { fontSize: 13, fontWeight: '600' },
-  button: { height: 52, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginTop: 28 },
-  buttonText: { color: '#FFFFFF', fontSize: 17, fontWeight: '700' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 16, fontSize: 15 },
+  headerBar: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10 },
+  headerTitle: { fontSize: 20, fontWeight: '800' },
+  headerSub: { fontSize: 12, marginTop: 2 },
+  chatArea: { flex: 1 },
+  chatContent: { padding: 16, paddingTop: 8, paddingBottom: 8 },
+  bubbleRow: { flexDirection: 'row', marginBottom: 14, alignItems: 'flex-end' },
+  userRow: { justifyContent: 'flex-end' },
+  aiRow: { justifyContent: 'flex-start' },
+  avatar: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginHorizontal: 6 },
+  avatarText: { fontSize: 14 },
+  bubble: { maxWidth: '78%', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10 },
+  userBubble: { borderBottomRightRadius: 4 },
+  aiBubble: { borderBottomLeftRadius: 4, borderWidth: 1 },
+  bubbleText: { fontSize: 15, lineHeight: 21 },
+  inputBar: { borderTopWidth: 1, padding: 12, paddingBottom: 24 },
+  inputRow: { flexDirection: 'row', gap: 8 },
+  textInput: { flex: 1, height: 46, borderRadius: 14, borderWidth: 1, paddingHorizontal: 16, fontSize: 15 },
+  sendBtn: { width: 46, height: 46, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  sendBtnText: { color: '#FFF', fontSize: 20, fontWeight: '700' },
+  doneRow: { flexDirection: 'row', gap: 10 },
+  clarifyBtn: { flex: 1, height: 48, borderRadius: 14, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  clarifyBtnText: { fontSize: 14, fontWeight: '600' },
+  generateBtn: { flex: 2, height: 48, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  generateBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
 });

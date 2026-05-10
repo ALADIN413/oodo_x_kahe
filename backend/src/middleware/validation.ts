@@ -28,10 +28,29 @@ export const createTripSchema = z.object({
   budget: z.number().min(0),
   interests: z.array(z.string()).optional().default([]),
   headcount: z.number().min(1),
+  tripType: z.string().optional(),
+  constraints: z.object({
+    vegetarian: z.boolean().optional(),
+    kids: z.boolean().optional(),
+    seniors: z.boolean().optional(),
+    luxury: z.boolean().optional(),
+    publicTransport: z.boolean().optional(),
+  }).optional(),
 });
 
-export const generateAiPlanSchema = z.object({
+export const generateQuestionsSchema = z.object({
   tripId: z.string(),
+});
+
+export const submitAnswersSchema = z.object({
+  tripId: z.string(),
+  answers: z.array(z.string()),
+});
+
+export const regenerateDaySchema = z.object({
+  tripId: z.string(),
+  dayNumber: z.number(),
+  instruction: z.string().min(1),
 });
 
 export function validate(schema: z.ZodSchema) {

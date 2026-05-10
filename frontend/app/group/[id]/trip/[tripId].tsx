@@ -1,28 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, TextInput, Modal, Alert, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system';
 import { useAuth } from '../../../../src/context/AuthContext';
 import { useAppData } from '../../../../src/store/useStore';
 import { useColors } from '../../../../src/hooks/useColors';
 import { api } from '../../../../src/services/api';
 import ItineraryCard from '../../../../src/components/ItineraryCard';
 import BudgetSummary from '../../../../src/components/BudgetSummary';
-import LoadingOverlay from '../../../../src/components/LoadingOverlay';
 
 export default function TripDetailScreen() {
   const { id, tripId } = useLocalSearchParams();
   const { token } = useAuth();
-  const { generateAiPlan } = useAppData();
+  const { regenerateDay } = useAppData();
   const colors = useColors();
 
   const [trip, setTrip] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
+  const [regenerating, setRegenerating] = useState<number | null>(null);
+  const [showRegenModal, setShowRegenModal] = useState(false);
+  const [regenDay, setRegenDay] = useState(1);
+  const [regenInstruction, setRegenInstruction] = useState('');
 
   async function loadTrip() {
     try {
-      const trips = await api.getTrips(token!, id as string);
-      const found = trips.find((t: any) => t._id === tripId);
+      const result = await api.getTrips(token!, id as string);
+      const found = (result.trips || []).find((t: any) => t._id === tripId);
       setTrip(found || null);
     } catch { } finally {
       setLoading(false);
@@ -33,19 +38,95 @@ export default function TripDetailScreen() {
     loadTrip();
   }, [tripId]);
 
-  async function handleGenerate() {
-    setGenerating(true);
+  async function handleRegenerateDay() {
+    if (!regenInstruction.trim()) {
+      Alert.alert('Error', 'Please describe what you want to change');
+      return;
+    }
+    setRegenerating(regenDay);
+    setShowRegenModal(false);
     try {
-      const updated = await generateAiPlan(tripId as string);
+      const updated = await regenerateDay(tripId as string, regenDay, regenInstruction);
       setTrip(updated);
+      Alert.alert('Done!', `Day ${regenDay} has been updated.`);
     } catch (e: any) {
-      // retry with the generation
-      try {
-        const updated = await generateAiPlan(tripId as string);
-        setTrip(updated);
-      } catch { }
+      Alert.alert('Error', e.message || 'Failed to regenerate day');
     } finally {
-      setGenerating(false);
+      setRegenerating(null);
+    }
+  }
+
+  async function handleExportPDF() {
+    if (!trip?.aiPlanJson) return;
+
+    const plan = trip.aiPlanJson;
+    const daysHtml = (plan.days || []).map((day: any) => `
+      <div style="page-break-inside: avoid; margin-bottom: 24px; background: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0;">
+        <h2 style="color: #4F46E5; margin: 0 0 4px; font-size: 20px;">Day ${day.day}</h2>
+        <p style="color: #64748b; margin: 0 0 12px; font-size: 14px;">📍 ${day.city}</p>
+        ${(day.activities || []).map((a: any) => `
+          <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e2e8f0;">
+            <div>
+              <span style="color: #4F46E5; font-weight: 600; font-size: 13px;">${a.time}</span>
+              <p style="margin: 2px 0 0; font-weight: 600; font-size: 15px;">${a.activity}</p>
+              <p style="margin: 2px 0 0; color: #64748b; font-size: 13px;">${a.description}</p>
+            </div>
+            <span style="color: #64748b; font-weight: 600;">$${a.cost}</span>
+          </div>
+        `).join('')}
+      </div>
+    `).join('');
+
+    const destName = trip.destination ? trip.destination.replace(/\s+/g, '_') : 'Trip';
+    const html = `
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            body { font-family: -apple-system, sans-serif; padding: 24px; color: #0f172a; }
+            h1 { color: #4F46E5; font-size: 28px; margin: 0; }
+            .sub { color: #64748b; font-size: 14px; margin: 4px 0 24px; }
+            .meta { display: flex; gap: 16px; margin-bottom: 20px; }
+            .meta-item { color: #64748b; font-size: 13px; }
+            .total { font-size: 18px; font-weight: 700; color: #10B981; margin: 20px 0; }
+          </style>
+        </head>
+        <body>
+          <h1>${trip.destination || 'Trip Itinerary'}</h1>
+          <p class="sub">${plan.days?.length || 0} day itinerary</p>
+          <div class="meta">
+            <span class="meta-item">👥 ${trip.headcount || '?'} travelers</span>
+            <span class="meta-item">💰 $${trip.budget?.toLocaleString() || '?'}</span>
+          </div>
+          ${daysHtml}
+          <p class="total">Total Estimated Cost: $${plan.totalCost || 0}</p>
+          ${plan.notes ? `<p style="color: #64748b; font-size: 13px; margin-top: 16px;">${plan.notes}</p>` : ''}
+          <p style="color: #94a3b8; font-size: 11px; margin-top: 32px; text-align: center;">Generated by Traveloop AI</p>
+        </body>
+      </html>
+    `;
+
+    try {
+      const { uri } = await Print.printToFileAsync({ html });
+      const pdfName = `${destName}_Itinerary.pdf`;
+
+      if (Platform.OS === 'android') {
+        const dest = `${FileSystem.cacheDirectory}${pdfName}`;
+        await FileSystem.moveAsync({ from: uri, to: dest });
+        const contentUri = await FileSystem.getContentUriAsync(dest);
+        await Sharing.shareAsync(contentUri, { mimeType: 'application/pdf' });
+      } else {
+        const dest = `${FileSystem.documentDirectory}${pdfName}`;
+        await FileSystem.moveAsync({ from: uri, to: dest });
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(dest);
+        } else {
+          Alert.alert('PDF Saved', `Saved to: ${dest}`);
+        }
+      }
+    } catch (e: any) {
+      Alert.alert('Export', 'Use share/save to download the PDF');
     }
   }
 
@@ -65,13 +146,11 @@ export default function TripDetailScreen() {
     );
   }
 
-  const hasAiPlan = trip.aiPlanJson?.days?.length > 0;
   const plan = trip.aiPlanJson;
+  const hasAiPlan = plan?.days?.length > 0;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <LoadingOverlay visible={generating} message="AI is planning your trip..." />
-
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -83,12 +162,8 @@ export default function TripDetailScreen() {
             {new Date(trip.startDate).toLocaleDateString()} - {new Date(trip.endDate).toLocaleDateString()}
           </Text>
           <View style={styles.meta}>
-            <Text style={[styles.metaItem, { color: colors.textSecondary }]}>
-              👥 {trip.headcount} travelers
-            </Text>
-            <Text style={[styles.metaItem, { color: colors.textSecondary }]}>
-              💰 ${trip.budget?.toLocaleString()} budget
-            </Text>
+            <Text style={[styles.metaItem, { color: colors.textSecondary }]}>👥 {trip.headcount} travelers</Text>
+            <Text style={[styles.metaItem, { color: colors.textSecondary }]}>💰 ${trip.budget?.toLocaleString()} budget</Text>
           </View>
           {trip.interests?.length > 0 && (
             <View style={styles.interestRow}>
@@ -104,15 +179,15 @@ export default function TripDetailScreen() {
         {!hasAiPlan ? (
           <View style={[styles.genCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={styles.genIcon}>🤖</Text>
-            <Text style={[styles.genTitle, { color: colors.text }]}>AI Itinerary Ready</Text>
+            <Text style={[styles.genTitle, { color: colors.text }]}>No itinerary yet</Text>
             <Text style={[styles.genSub, { color: colors.textSecondary }]}>
-              Tap the button below to generate a personalized day-by-day itinerary powered by Gemini AI.
+              Go back to the trip setup and complete the AI questions to generate your personalized itinerary.
             </Text>
             <TouchableOpacity
               style={[styles.genButton, { backgroundColor: colors.primary }]}
-              onPress={handleGenerate}
+              onPress={() => router.push(`/group/${id}/trip-setup`)}
             >
-              <Text style={styles.genButtonText}>Generate Itinerary</Text>
+              <Text style={styles.genButtonText}>Back to Setup</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -124,12 +199,117 @@ export default function TripDetailScreen() {
               notes={plan.notes}
             />
 
+            {plan.budgetBreakdown && (
+              <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>Budget Breakdown</Text>
+                {Object.entries(plan.budgetBreakdown).map(([key, val]: any) => (
+                  <View key={key} style={styles.breakdownRow}>
+                    <Text style={[styles.breakdownLabel, { color: colors.textSecondary }]}>
+                      {key.charAt(0).toUpperCase() + key.slice(1)}
+                    </Text>
+                    <Text style={[styles.breakdownVal, { color: colors.text }]}>${val}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {plan.recommendations && (
+              <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>Recommendations</Text>
+                {plan.recommendations.hotel && (
+                  <View style={styles.recItem}>
+                    <Text style={styles.recIcon}>🏨</Text>
+                    <View style={styles.recContent}>
+                      <Text style={[styles.recLabel, { color: colors.textSecondary }]}>Hotel</Text>
+                      <Text style={[styles.recText, { color: colors.text }]}>{plan.recommendations.hotel}</Text>
+                    </View>
+                  </View>
+                )}
+                {plan.recommendations.restaurants?.length > 0 && (
+                  <View style={styles.recItem}>
+                    <Text style={styles.recIcon}>🍽️</Text>
+                    <View style={styles.recContent}>
+                      <Text style={[styles.recLabel, { color: colors.textSecondary }]}>Restaurants</Text>
+                      {plan.recommendations.restaurants.map((r: string, i: number) => (
+                        <Text key={i} style={[styles.recText, { color: colors.text }]}>• {r}</Text>
+                      ))}
+                    </View>
+                  </View>
+                )}
+                {plan.recommendations.transportTips && (
+                  <View style={styles.recItem}>
+                    <Text style={styles.recIcon}>🚗</Text>
+                    <View style={styles.recContent}>
+                      <Text style={[styles.recLabel, { color: colors.textSecondary }]}>Transport</Text>
+                      <Text style={[styles.recText, { color: colors.text }]}>{plan.recommendations.transportTips}</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
+
             {plan.days.map((day: any) => (
-              <ItineraryCard key={day.day} {...day} />
+              <View key={day.day}>
+                <ItineraryCard {...day} />
+                <TouchableOpacity
+                  style={[styles.regenBtn, { borderColor: colors.border }]}
+                  onPress={() => { setRegenDay(day.day); setRegenInstruction(''); setShowRegenModal(true); }}
+                  disabled={regenerating === day.day}
+                >
+                  {regenerating === day.day ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <>
+                      <Text style={[styles.regenIcon]}>🔄</Text>
+                      <Text style={[styles.regenText, { color: colors.primary }]}>Regenerate Day {day.day}</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
             ))}
+
+            <TouchableOpacity
+              style={[styles.exportBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={handleExportPDF}
+            >
+              <Text style={styles.exportIcon}>📄</Text>
+              <Text style={[styles.exportText, { color: colors.primary }]}>Export PDF</Text>
+            </TouchableOpacity>
           </>
         )}
       </ScrollView>
+
+      <Modal visible={showRegenModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Regenerate Day {regenDay}</Text>
+            <Text style={[styles.modalSub, { color: colors.textSecondary }]}>Tell the AI what to change</Text>
+            <TextInput
+              style={[styles.modalInput, { backgroundColor: colors.surfaceAlt, color: colors.text, borderColor: colors.border }]}
+              value={regenInstruction}
+              onChangeText={setRegenInstruction}
+              placeholder="e.g. Add more adventure activities"
+              placeholderTextColor={colors.textSecondary}
+              multiline
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, borderWidth: 1 }]}
+                onPress={() => setShowRegenModal(false)}
+              >
+                <Text style={[styles.modalBtnText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: colors.primary }]}
+                onPress={handleRegenerateDay}
+              >
+                <Text style={[styles.modalBtnText, { color: '#FFF' }]}>Regenerate</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -147,10 +327,34 @@ const styles = StyleSheet.create({
   interestRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
   interestBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   interestText: { fontSize: 12, fontWeight: '600' },
+  card: { borderRadius: 16, borderWidth: 1, padding: 20, marginBottom: 16 },
+  cardTitle: { fontSize: 18, fontWeight: '700', marginBottom: 14 },
+  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  breakdownLabel: { fontSize: 14 },
+  breakdownVal: { fontSize: 14, fontWeight: '600' },
+  recItem: { flexDirection: 'row', marginBottom: 14 },
+  recIcon: { fontSize: 20, marginRight: 10, marginTop: 2 },
+  recContent: { flex: 1 },
+  recLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 0.5, marginBottom: 2 },
+  recText: { fontSize: 14, lineHeight: 20 },
   genCard: { borderRadius: 20, borderWidth: 1, padding: 32, alignItems: 'center' },
   genIcon: { fontSize: 48, marginBottom: 16 },
   genTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8 },
   genSub: { fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
   genButton: { height: 50, borderRadius: 14, paddingHorizontal: 32, justifyContent: 'center', alignItems: 'center' },
   genButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  regenBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderWidth: 1, borderRadius: 12, marginBottom: 16, marginTop: -8 },
+  regenIcon: { fontSize: 14, marginRight: 6 },
+  regenText: { fontSize: 13, fontWeight: '600' },
+  exportBtn: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 16, borderRadius: 16, borderWidth: 1, marginBottom: 20 },
+  exportIcon: { fontSize: 18, marginRight: 8 },
+  exportText: { fontSize: 16, fontWeight: '700' },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#00000060' },
+  modalContent: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
+  modalTitle: { fontSize: 20, fontWeight: '700', marginBottom: 4 },
+  modalSub: { fontSize: 14, marginBottom: 20 },
+  modalInput: { borderRadius: 14, borderWidth: 1, padding: 14, fontSize: 16, minHeight: 80, textAlignVertical: 'top' },
+  modalActions: { flexDirection: 'row', gap: 12, marginTop: 20 },
+  modalBtn: { flex: 1, height: 48, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  modalBtnText: { fontSize: 16, fontWeight: '600' },
 });

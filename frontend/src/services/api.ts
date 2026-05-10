@@ -43,13 +43,14 @@ export const api = {
 
   getMyGroups: (token: string) => authRequest('/groups/my', token),
 
-  createTrip: (token: string, data: {
-    groupId: string; destination: string; startDate: string;
-    endDate: string; budget: number; interests: string[]; headcount: number;
-  }) => authRequest('/trips/create', token, { method: 'POST', body: JSON.stringify(data) }),
+  createTrip: (token: string, data: any) =>
+    authRequest('/trips/create', token, { method: 'POST', body: JSON.stringify(data) }),
 
-  generateAiPlan: (token: string, tripId: string) =>
-    authRequest('/trips/generate-ai-plan', token, { method: 'POST', body: JSON.stringify({ tripId }) }),
+  submitAnswers: (token: string, tripId: string, answers: string[]) =>
+    authRequest('/trips/submit-answers', token, { method: 'POST', body: JSON.stringify({ tripId, answers }) }),
+
+  regenerateDay: (token: string, tripId: string, dayNumber: number, instruction: string) =>
+    authRequest('/trips/regenerate-day', token, { method: 'POST', body: JSON.stringify({ tripId, dayNumber, instruction }) }),
 
   getTrips: (token: string, groupId: string) => authRequest(`/trips/${groupId}`, token),
 };

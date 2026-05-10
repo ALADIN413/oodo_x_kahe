@@ -1,12 +1,29 @@
 import { Router } from 'express';
-import { createTripSchema, generateAiPlanSchema, validate } from '../middleware/validation.js';
+import { z } from 'zod';
+import { validate } from '../middleware/validation.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { createTrip, generateAiPlan, getTripsByGroup } from '../controllers/trip.controller.js';
+import { createTrip, submitAnswers, regenerateDayForTrip, getTripsByGroup } from '../controllers/trip.controller.js';
+
+const createTripSchema = z.object({
+  groupId: z.string(),
+});
+
+const submitAnswersSchema = z.object({
+  tripId: z.string(),
+  answers: z.array(z.string()),
+});
+
+const regenerateDaySchema = z.object({
+  tripId: z.string(),
+  dayNumber: z.number(),
+  instruction: z.string().min(1),
+});
 
 const router = Router();
 
 router.post('/create', authMiddleware, validate(createTripSchema), createTrip);
-router.post('/generate-ai-plan', authMiddleware, validate(generateAiPlanSchema), generateAiPlan);
+router.post('/submit-answers', authMiddleware, validate(submitAnswersSchema), submitAnswers);
+router.post('/regenerate-day', authMiddleware, validate(regenerateDaySchema), regenerateDayForTrip);
 router.get('/:groupId', authMiddleware, getTripsByGroup);
 
 export default router;

@@ -14,12 +14,8 @@ interface Group {
 interface Trip {
   _id: string;
   groupId: string;
-  destination: string;
-  startDate: string;
-  endDate: string;
-  budget: number;
-  interests: string[];
-  headcount: number;
+  destination?: string;
+  questions?: Array<{ question: string; answer: string }>;
   aiPlanJson?: any;
   createdAt: string;
 }
@@ -31,7 +27,8 @@ interface AppDataContextType {
   createGroup: (name: string) => Promise<Group>;
   joinGroup: (inviteCode: string) => Promise<Group>;
   createTrip: (data: any) => Promise<Trip>;
-  generateAiPlan: (tripId: string) => Promise<Trip>;
+  submitAnswers: (tripId: string, answers: string[]) => Promise<Trip>;
+  regenerateDay: (tripId: string, dayNumber: number, instruction: string) => Promise<Trip>;
   getTrips: (groupId: string) => Promise<Trip[]>;
 }
 
@@ -70,8 +67,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     return data.trip;
   }, [token]);
 
-  const generateAiPlan = useCallback(async (tripId: string) => {
-    const data = await api.generateAiPlan(token!, tripId);
+  const submitAnswers = useCallback(async (tripId: string, answers: string[]) => {
+    const data = await api.submitAnswers(token!, tripId, answers);
+    return data.trip;
+  }, [token]);
+
+  const regenerateDay = useCallback(async (tripId: string, dayNumber: number, instruction: string) => {
+    const data = await api.regenerateDay(token!, tripId, dayNumber, instruction);
     return data.trip;
   }, [token]);
 
@@ -82,7 +84,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AppDataContext.Provider value={{
-      groups, loading, fetchGroups, createGroup, joinGroup, createTrip, generateAiPlan, getTrips,
+      groups, loading, fetchGroups, createGroup, joinGroup, createTrip,
+      submitAnswers, regenerateDay, getTrips,
     }}>
       {children}
     </AppDataContext.Provider>
