@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useAuth } from '../../../src/context/AuthContext';
-import { useAppData } from '../../../src/store/useStore';
-import { useColors } from '../../../src/hooks/useColors';
-import { api } from '../../../src/services/api';
-import ItineraryCard from '../../../src/components/ItineraryCard';
-import BudgetSummary from '../../../src/components/BudgetSummary';
-import LoadingOverlay from '../../../src/components/LoadingOverlay';
+import { useAuth } from '../../../../src/context/AuthContext';
+import { useAppData } from '../../../../src/store/useStore';
+import { useColors } from '../../../../src/hooks/useColors';
+import { api } from '../../../../src/services/api';
+import ItineraryCard from '../../../../src/components/ItineraryCard';
+import BudgetSummary from '../../../../src/components/BudgetSummary';
+import LoadingOverlay from '../../../../src/components/LoadingOverlay';
 
 export default function TripDetailScreen() {
   const { id, tripId } = useLocalSearchParams();

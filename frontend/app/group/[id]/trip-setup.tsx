@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useAppData } from '../../src/store/useStore';
-import { useColors } from '../../src/hooks/useColors';
+import { useAppData } from '../../../src/store/useStore';
+import { useColors } from '../../../src/hooks/useColors';
 
 const INTEREST_OPTIONS = ['Adventure', 'Culture', 'Food', 'Shopping', 'Nature', 'Nightlife', 'Relaxation', 'History'];
 
